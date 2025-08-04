@@ -1,16 +1,15 @@
+
 const express = require('express');
 const cheerio = require('cheerio');
 const cors = require('cors');
-const fetch = require('node-fetch'); // Make sure to use a version of node-fetch compatible with CommonJS if needed, or use an alternative like axios
+const fetch = require('node-fetch');
 
 const app = express();
 
-// Use CORS to allow your app to make requests to this function
-app.use(cors({ origin: true }));
-app.use(express.json()); // To parse JSON request bodies
+app.use(cors()); 
+app.use(express.json());
 
-// This is the main endpoint the app will call
-app.post('/scrape', async (req, res) => {
+app.post('/', async (req, res) => {
   const { url } = req.body;
 
   if (!url || !url.startsWith('https://www.skillrack.com')) {
@@ -18,19 +17,32 @@ app.post('/scrape', async (req, res) => {
   }
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch the SkillRack page. It may be down or blocking requests.');
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Helper function to extract a statistic value by its label
     const getStat = (label) => {
       const statElement = $(`.statistic .label:contains('${label}')`).first();
       const valueText = statElement.siblings('.value').text().trim();
       return parseInt(valueText, 10) || 0;
     };
 
-    // Scrape all the required data
-    const name = $('.ui.big.label.black').first().text().trim() || 'Unknown';
+    const name = $('.ui.big.label.black').first().text().trim();
+    
+    
+    if (!name || name === '') {
+        return res.status(404).json({ error: 'Could not find profile data. The URL may be incorrect or the profile is private.' });
+    }
+    
     const department = $('.ui.large.label').first().text().trim() || 'Unknown';
     const rank = $(`.statistic .label:contains('RANK')`).siblings('.value').text().trim() || 'N/A';
     
@@ -42,7 +54,6 @@ app.post('/scrape', async (req, res) => {
 
     const totalPoints = (dc * 2) + (dt * 20) + (codeTrack * 2);
 
-    // Construct the profile object to send back to the app
     const profileData = {
       name,
       department,
@@ -55,23 +66,12 @@ app.post('/scrape', async (req, res) => {
       totalPoints,
     };
     
-    // Send the successful response
     res.status(200).json(profileData);
 
   } catch (error) {
     console.error('Scraping failed:', error);
-    res.status(500).json({ error: 'Failed to scrape the profile. The website structure might have changed.' });
+    res.status(500).json({ error: 'Failed to scrape the profile. The website structure might have changed or the service is down.' });
   }
 });
 
-// This makes the function ready for deployment on services like Vercel or Firebase
-// For Vercel, you would export the app: `module.exports = app;`
-// For Firebase Cloud Functions, you would wrap it: 
-// const functions = require('firebase-functions');
-// exports.scraper = functions.https.onRequest(app);
-
-// To run locally for testing:
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Scraper function listening on port ${PORT}`);
-});
+module.exports = app;
